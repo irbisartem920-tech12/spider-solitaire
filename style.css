@@ -76,6 +76,7 @@ html, body {
 #stock-row {
   display: flex;
   align-items: flex-start;
+  gap: 0.6vw;
   min-height: calc(var(--card-h) + 6px);
   margin-bottom: 6px;
   position: relative;
@@ -111,6 +112,46 @@ html, body {
 }
 .stock-pile.empty { border-color: rgba(255,255,255,0.1); cursor: default; }
 .stock-pile.hint-target { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217,164,65,0.5); }
+
+.waste-pile { cursor: default; }
+.waste-pile.empty { border-style: dashed; }
+.waste-pile:not(.empty) { border-style: solid; border-color: rgba(255,255,255,0.12); }
+
+#foundations {
+  display: flex;
+  gap: 0.6vw;
+  margin-left: auto;
+}
+.foundation-slot {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: calc(var(--card-w) * 0.09);
+  border: 2px dashed rgba(255,255,255,0.22);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--card-w) * 0.42);
+  color: rgba(255,255,255,0.18);
+}
+.foundation-slot.hint-target,
+.foundation-slot.column-drop-target { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217,164,65,0.5); }
+.foundation-slot .card { position: absolute; inset: 0; }
+
+.stock-recycle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--card-w) * 0.5);
+  color: rgba(255,255,255,0.5);
+}
+
+#app[data-mode="spider"] #waste,
+#app[data-mode="spider"] #foundations {
+  display: none;
+}
 
 /* ---------- Tableau ---------- */
 #tableau {
@@ -287,6 +328,24 @@ html, body {
 .diff-btn span { font-weight: 400; opacity: 0.7; font-size: 11px; }
 .diff-btn.active { border-color: var(--accent); background: rgba(217,164,65,0.2); }
 .menu-hint { font-size: 11px; color: #9dbfad; margin-top: 14px; margin-bottom: 0; }
+
+.mode-options {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.mode-btn {
+  flex: 1;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mode-btn.active { border-color: var(--accent); background: rgba(217,164,65,0.2); }
 
 .hidden { display: none !important; }
 

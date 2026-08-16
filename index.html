@@ -6,9 +6,9 @@
 <meta name="theme-color" content="#0b3d28">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Паук">
+<meta name="apple-mobile-web-app-title" content="Пасьянсы">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Пасьянс Паук</title>
+<title>Пасьянсы: Паук и Косынка</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="icons/icon-192.png">
@@ -35,6 +35,8 @@
   <main id="board">
     <div id="stock-row">
       <div id="stock" class="stock-pile" title="Раздать карты"></div>
+      <div id="waste" class="stock-pile waste-pile"></div>
+      <div id="foundations"></div>
       <div id="win-banner" class="hidden">
         <div class="win-card">
           <h2>Победа! 🎉</h2>
@@ -50,12 +52,19 @@
 
   <div id="menu-overlay" class="overlay hidden">
     <div class="menu-panel">
-      <h2>Пасьянс Паук</h2>
-      <p class="menu-label">Сложность (число мастей)</p>
-      <div class="diff-options">
-        <button class="diff-btn" data-suits="1">1 масть<br><span>легко</span></button>
-        <button class="diff-btn" data-suits="2">2 масти<br><span>средне</span></button>
-        <button class="diff-btn" data-suits="4">4 масти<br><span>сложно</span></button>
+      <h2>Пасьянсы</h2>
+      <p class="menu-label">Игра</p>
+      <div class="mode-options">
+        <button class="mode-btn" data-game="spider">🕷 Паук</button>
+        <button class="mode-btn" data-game="klondike">🃏 Косынка</button>
+      </div>
+      <div id="spider-options">
+        <p class="menu-label">Сложность (число мастей)</p>
+        <div class="diff-options">
+          <button class="diff-btn" data-suits="1">1 масть<br><span>легко</span></button>
+          <button class="diff-btn" data-suits="2">2 масти<br><span>средне</span></button>
+          <button class="diff-btn" data-suits="4">4 масти<br><span>сложно</span></button>
+        </div>
       </div>
       <button id="btn-close-menu" class="primary-btn">Закрыть</button>
       <p class="menu-hint">Игра сохраняется автоматически и работает офлайн.</p>
