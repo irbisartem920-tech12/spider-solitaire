@@ -1,4 +1,4 @@
-const CACHE_NAME = "spider-solitaire-v2";
+const CACHE_NAME = "spider-solitaire-v3";
 const ASSETS = [
   "./",
   "./index.html",
