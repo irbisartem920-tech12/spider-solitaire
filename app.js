@@ -699,40 +699,45 @@ function layoutColumnHeights() {
 
 /* ============================ Drag & Drop =============================== */
 
-let lastTap = null; // { cardId, time } — used to detect double-tap on touch, where native dblclick is unreliable
-
 function attachCardPointerHandlers(cardEl, pileRef, card) {
   if (!card.faceUp) return;
   cardEl.addEventListener("pointerdown", (e) => onCardPointerDown(e, pileRef, cardEl));
 }
 
-function onCardDoubleClick(ref, cardIndex) {
-  if (mode !== "klondike") return;
-  const cards = getPileCards(ref);
-  if (!cards || cardIndex !== cards.length - 1) return;
-  const card = cards[cardIndex];
-  for (let i = 0; i < 4; i++) {
-    const toRef = { k: "foundation", i };
-    if (canDropOnRef(card, 1, toRef)) {
-      commitMove(ref, cardIndex, toRef);
-      return;
+// Tries to send the card straight to where it belongs: a foundation slot first
+// (Klondike only, top zone), then any valid tableau spot (bottom zone). Used when
+// a card is tapped rather than dragged.
+function autoMoveCard(ref, cardIndex) {
+  const group = getDraggableGroup(ref, cardIndex);
+  if (!group) return false;
+
+  if (mode === "klondike" && group.length === 1) {
+    for (let i = 0; i < 4; i++) {
+      const toRef = { k: "foundation", i };
+      if (canDropOnRef(group[0], group.length, toRef)) return commitMove(ref, cardIndex, toRef);
     }
   }
+
+  const colCount = activeState().tableau.length;
+  // Prefer landing on a real matching card before dumping into an empty column.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let c = 0; c < colCount; c++) {
+      if (ref.k === "tableau" && ref.i === c) continue;
+      const col = activeState().tableau[c];
+      const isEmpty = col.length === 0;
+      if (pass === 0 && isEmpty) continue;
+      if (pass === 1 && !isEmpty) continue;
+      const toRef = { k: "tableau", i: c };
+      if (canDropOnRef(group[0], group.length, toRef)) return commitMove(ref, cardIndex, toRef);
+    }
+  }
+  return false;
 }
 
 function onCardPointerDown(e, pileRef, cardEl) {
   if (dragCtx) return;
   if (e.button !== undefined && e.button !== 0) return;
   const cardId = Number(cardEl.dataset.cardId);
-
-  const now = Date.now();
-  const isDoubleTap = lastTap && lastTap.cardId === cardId && now - lastTap.time < 400;
-  lastTap = isDoubleTap ? null : { cardId, time: now };
-  if (isDoubleTap) {
-    onCardDoubleClick(pileRef, cardIndexInPile(pileRef, cardId));
-    return;
-  }
-
   const cardIndex = cardIndexInPile(pileRef, cardId);
   const group = getDraggableGroup(pileRef, cardIndex);
   if (!group) {
@@ -864,10 +869,14 @@ function onCardPointerUp(e) {
 
   clearDropHighlights();
 
-  const target = ctx.moved ? findDropTargetAtPoint(e.clientX, e.clientY) : null;
   let didMove = false;
-  if (target && !refsEqual(target, ctx.fromRef)) {
-    didMove = commitMove(ctx.fromRef, ctx.cardIndex, target);
+  if (ctx.moved) {
+    const target = findDropTargetAtPoint(e.clientX, e.clientY);
+    if (target && !refsEqual(target, ctx.fromRef)) {
+      didMove = commitMove(ctx.fromRef, ctx.cardIndex, target);
+    }
+  } else {
+    didMove = autoMoveCard(ctx.fromRef, ctx.cardIndex);
   }
   if (!didMove) {
     ctx.wrapper.remove();
