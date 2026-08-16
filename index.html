@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b3d28">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Паук">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Пасьянс Паук</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header id="topbar">
+    <button id="btn-menu" class="icon-btn" title="Меню" aria-label="Меню">☰</button>
+    <div class="stats">
+      <span id="stat-score" class="stat">Очки: <b>500</b></span>
+      <span id="stat-moves" class="stat">Ходы: <b>0</b></span>
+      <span id="stat-time" class="stat">00:00</span>
+    </div>
+    <div class="actions">
+      <button id="btn-undo" class="icon-btn" title="Отменить ход" aria-label="Отменить ход">↩︎</button>
+      <button id="btn-hint" class="icon-btn" title="Подсказка" aria-label="Подсказка">💡</button>
+      <button id="btn-new" class="icon-btn" title="Новая игра" aria-label="Новая игра">🔄</button>
+    </div>
+  </header>
+
+  <main id="board">
+    <div id="stock-row">
+      <div id="stock" class="stock-pile" title="Раздать карты"></div>
+      <div id="win-banner" class="hidden">
+        <div class="win-card">
+          <h2>Победа! 🎉</h2>
+          <p id="win-stats"></p>
+          <button id="btn-again" class="primary-btn">Играть снова</button>
+        </div>
+      </div>
+    </div>
+    <div id="tableau"></div>
+  </main>
+
+  <div id="drag-layer"></div>
+
+  <div id="menu-overlay" class="overlay hidden">
+    <div class="menu-panel">
+      <h2>Пасьянс Паук</h2>
+      <p class="menu-label">Сложность (число мастей)</p>
+      <div class="diff-options">
+        <button class="diff-btn" data-suits="1">1 масть<br><span>легко</span></button>
+        <button class="diff-btn" data-suits="2">2 масти<br><span>средне</span></button>
+        <button class="diff-btn" data-suits="4">4 масти<br><span>сложно</span></button>
+      </div>
+      <button id="btn-close-menu" class="primary-btn">Закрыть</button>
+      <p class="menu-hint">Игра сохраняется автоматически и работает офлайн.</p>
+    </div>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
