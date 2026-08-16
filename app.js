@@ -699,10 +699,11 @@ function layoutColumnHeights() {
 
 /* ============================ Drag & Drop =============================== */
 
+let lastTap = null; // { cardId, time } — used to detect double-tap on touch, where native dblclick is unreliable
+
 function attachCardPointerHandlers(cardEl, pileRef, card) {
   if (!card.faceUp) return;
   cardEl.addEventListener("pointerdown", (e) => onCardPointerDown(e, pileRef, cardEl));
-  cardEl.addEventListener("dblclick", () => onCardDoubleClick(pileRef, cardIndexInPile(pileRef, card.id)));
 }
 
 function onCardDoubleClick(ref, cardIndex) {
@@ -723,6 +724,15 @@ function onCardPointerDown(e, pileRef, cardEl) {
   if (dragCtx) return;
   if (e.button !== undefined && e.button !== 0) return;
   const cardId = Number(cardEl.dataset.cardId);
+
+  const now = Date.now();
+  const isDoubleTap = lastTap && lastTap.cardId === cardId && now - lastTap.time < 400;
+  lastTap = isDoubleTap ? null : { cardId, time: now };
+  if (isDoubleTap) {
+    onCardDoubleClick(pileRef, cardIndexInPile(pileRef, cardId));
+    return;
+  }
+
   const cardIndex = cardIndexInPile(pileRef, cardId);
   const group = getDraggableGroup(pileRef, cardIndex);
   if (!group) {
@@ -735,10 +745,19 @@ function onCardPointerDown(e, pileRef, cardEl) {
     return;
   }
 
-  const colEl = cardEl.parentElement;
-  if (!colEl) return;
-  const cardEls = Array.from(colEl.children).slice(cardIndex);
-  if (!cardEls.length) return;
+  // For tableau piles every card in the run has its own DOM element (colEl.children
+  // matches the logical array), so we can slice from cardIndex. Non-tableau piles
+  // (waste) only ever render their single top card as one DOM element, regardless of
+  // its logical index in the pile array — so the dragged group is just that element.
+  let cardEls;
+  if (pileRef.k === "tableau") {
+    const colEl = cardEl.parentElement;
+    if (!colEl) return;
+    cardEls = Array.from(colEl.children).slice(cardIndex);
+    if (!cardEls.length) return;
+  } else {
+    cardEls = [cardEl];
+  }
   const rects = cardEls.map((el) => el.getBoundingClientRect());
   const originRect = rects[0];
   if (!originRect) return;
