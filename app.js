@@ -16,6 +16,15 @@ const MODE_KEY = "solitaire-active-mode";
 const SPIDER_COLS = 10;
 const SPIDER_START_COUNTS = [6, 6, 6, 6, 5, 5, 5, 5, 5, 5];
 const KLONDIKE_COLS = 7;
+const JOKERS_PER_GAME = 2;
+
+function isJoker(card) { return card.suit === "J"; }
+function makeJokers(idStart) {
+  return [
+    { id: idStart, suit: "J", rank: null, faceUp: true },
+    { id: idStart + 1, suit: "J", rank: null, faceUp: true },
+  ].slice(0, JOKERS_PER_GAME);
+}
 
 /* ============================== State ================================ */
 
@@ -58,6 +67,7 @@ function createSpiderState(suitsCount) {
     suitsCount,
     tableau,
     stock: deck, // remaining 50 cards
+    jokers: makeJokers(id),
     completed: 0,
     score: 500,
     moves: 0,
@@ -84,6 +94,7 @@ function createKlondikeState() {
     tableau,
     stock: deck, // remaining 24 cards, face-down
     waste: [],
+    jokers: makeJokers(id),
     foundations: [
       { suit: null, cards: [] },
       { suit: null, cards: [] },
@@ -125,6 +136,7 @@ function getPileCards(ref) {
   if (ref.k === "waste") return st.waste;
   if (ref.k === "foundation") return st.foundations[ref.i].cards;
   if (ref.k === "stock") return st.stock;
+  if (ref.k === "joker") return st.jokers;
   return null;
 }
 
@@ -140,10 +152,13 @@ function cardIndexInPile(ref, cardId) {
 
 /* ============================ Sequence rules =========================== */
 
+// A joker bridges any gap: it never breaks a run, in either direction.
 function isFaceUpDescendingSameSuit(cards) {
   for (let i = 0; i < cards.length; i++) {
     if (!cards[i].faceUp) return false;
-    if (i > 0 && (cards[i - 1].suit !== cards[i].suit || cards[i - 1].rank !== cards[i].rank + 1)) return false;
+    if (i > 0 && !isJoker(cards[i - 1]) && !isJoker(cards[i])) {
+      if (cards[i - 1].suit !== cards[i].suit || cards[i - 1].rank !== cards[i].rank + 1) return false;
+    }
   }
   return true;
 }
@@ -151,7 +166,7 @@ function isFaceUpDescendingSameSuit(cards) {
 function isFaceUpAltDescending(cards) {
   for (let i = 0; i < cards.length; i++) {
     if (!cards[i].faceUp) return false;
-    if (i > 0) {
+    if (i > 0 && !isJoker(cards[i - 1]) && !isJoker(cards[i])) {
       const prevColor = SUITS[cards[i - 1].suit].color;
       const curColor = SUITS[cards[i].suit].color;
       if (prevColor === curColor) return false;
@@ -179,6 +194,7 @@ function spiderCanDropOnTableau(targetCol, attachRank) {
   if (targetCol.length === 0) return true;
   const top = targetCol[targetCol.length - 1];
   if (!top.faceUp) return false;
+  if (isJoker(top)) return true; // a joker on top stands in for whatever card was needed
   return top.rank === attachRank + 1;
 }
 
@@ -186,6 +202,7 @@ function klondikeCanDropOnTableau(targetCol, leadCard) {
   if (targetCol.length === 0) return leadCard.rank === 13;
   const top = targetCol[targetCol.length - 1];
   if (!top.faceUp) return false;
+  if (isJoker(top)) return true; // a joker on top stands in for whatever card was needed
   return SUITS[top.suit].color !== SUITS[leadCard.suit].color && top.rank === leadCard.rank + 1;
 }
 
@@ -198,6 +215,15 @@ function klondikeCanDropOnFoundation(foundation, card) {
 // leadCard = the card that will sit directly under the target pile's exposed card
 // (i.e. group[0] — the topmost/least-exposed card of the dragged run).
 function canDropOnRef(leadCard, groupSize, ref) {
+  if (ref.k === "joker") {
+    // Only a lone joker (nothing stacked on top of it) can return to the tray.
+    return isJoker(leadCard) && groupSize === 1;
+  }
+  if (isJoker(leadCard)) {
+    // A joker stands in for whatever card is needed, so — aside from going back to
+    // the tray, handled above — it only ever targets the tableau, and fits anywhere.
+    return ref.k === "tableau";
+  }
   if (ref.k === "tableau") {
     const target = getPileCards(ref);
     if (mode === "spider") return spiderCanDropOnTableau(target, leadCard.rank);
@@ -250,6 +276,10 @@ function commitMove(fromRef, cardIndex, toRef) {
     const f = klondikeState.foundations[toRef.i];
     if (!f.suit) f.suit = group[0].suit;
   }
+  if (fromRef.k === "foundation") {
+    const f = klondikeState.foundations[fromRef.i];
+    if (f.cards.length === 0) f.suit = null;
+  }
   if (fromRef.k === "tableau") {
     const src = fromArr;
     if (src.length && !src[src.length - 1].faceUp) src[src.length - 1].faceUp = true;
@@ -272,7 +302,7 @@ function checkCompletedSequence(colIndex) {
   const col = spiderState.tableau[colIndex];
   if (col.length < 13) return;
   const tail = col.slice(col.length - 13);
-  if (tail[0].rank !== 13) return;
+  if (!isJoker(tail[0]) && tail[0].rank !== 13) return;
   if (!isFaceUpDescendingSameSuit(tail)) return;
   col.splice(col.length - 13);
   spiderState.completed++;
@@ -355,9 +385,39 @@ function checkWin() {
 }
 
 /* ================================ Hints ================================ */
+//
+// The hint doesn't just grab the first legal move — a move only "counts" if it
+// makes real progress (reveals a face-down card, completes a run, or reaches a
+// foundation). A purely lateral move (A onto B, which you could just as well
+// move straight back) is only suggested if it demonstrably sets up a productive
+// move one step later (2-ply lookahead). If nothing productive exists within
+// that lookahead, the hint honestly reports that no good move was found instead
+// of shuffling cards pointlessly.
 
 function cloneCard(c) { return { id: c.id, suit: c.suit, rank: c.rank, faceUp: c.faceUp }; }
 function cloneTableau(t) { return t.map((col) => col.map(cloneCard)); }
+
+/* ---- Spider ---- */
+
+function listSpiderCandidates(tableau) {
+  const out = [];
+  for (let fromCol = 0; fromCol < SPIDER_COLS; fromCol++) {
+    const col = tableau[fromCol];
+    for (let cardIndex = 0; cardIndex < col.length; cardIndex++) {
+      if (!col[cardIndex].faceUp || isJoker(col[cardIndex])) continue; // hint never initiates a move from an on-board joker
+      const group = col.slice(cardIndex);
+      if (!isFaceUpDescendingSameSuit(group)) continue;
+      const attachRank = group[0].rank;
+      for (let toCol = 0; toCol < SPIDER_COLS; toCol++) {
+        if (toCol === fromCol) continue;
+        if (!spiderCanDropOnTableau(tableau[toCol], attachRank)) continue;
+        if (tableau[toCol].length === 0 && cardIndex === 0) continue;
+        out.push({ fromCol, cardIndex, toCol, group });
+      }
+    }
+  }
+  return out;
+}
 
 function simulateSpiderMove(tableau, fromCol, cardIndex, toCol) {
   const t = cloneTableau(tableau);
@@ -373,75 +433,150 @@ function simulateSpiderMove(tableau, fromCol, cardIndex, toCol) {
     else break;
   }
   const completes = dst.length >= 13 && runLen >= 13;
-  return { revealed, runLen, completes };
+  return { tableau: t, revealed, runLen, completes };
 }
 
 function findSpiderHint() {
   const st = spiderState;
+  const candidates = listSpiderCandidates(st.tableau);
+  const asHint = (c, score) => ({ type: "move", fromRef: { k: "tableau", i: c.fromCol }, cardIndex: c.cardIndex, toRef: { k: "tableau", i: c.toCol }, score });
+
   let best = null;
-  for (let fromCol = 0; fromCol < SPIDER_COLS; fromCol++) {
-    const col = st.tableau[fromCol];
-    for (let cardIndex = 0; cardIndex < col.length; cardIndex++) {
-      const group = getDraggableGroup({ k: "tableau", i: fromCol }, cardIndex);
-      if (!group) continue;
-      const attachRank = group[0].rank;
-      for (let toCol = 0; toCol < SPIDER_COLS; toCol++) {
-        if (toCol === fromCol) continue;
-        if (!spiderCanDropOnTableau(st.tableau[toCol], attachRank)) continue;
-        if (st.tableau[toCol].length === 0 && cardIndex === 0) continue;
-        const sim = simulateSpiderMove(st.tableau, fromCol, cardIndex, toCol);
-        let score = 0;
-        if (sim.completes) score += 10000;
-        if (sim.revealed) score += 1000;
-        score += sim.runLen * 5;
-        score += group.length;
-        if (!best || score > best.score) {
-          best = { type: "move", fromRef: { k: "tableau", i: fromCol }, cardIndex, toRef: { k: "tableau", i: toCol }, score };
-        }
-      }
-    }
+  for (const c of candidates) {
+    const sim = simulateSpiderMove(st.tableau, c.fromCol, c.cardIndex, c.toCol);
+    if (!sim.completes && !sim.revealed) continue; // not productive on its own — check via lookahead below
+    let score = (sim.completes ? 10000 : 0) + (sim.revealed ? 1000 : 0) + sim.runLen * 5 + c.group.length;
+    if (!best || score > best.score) best = asHint(c, score);
   }
   if (best) return best;
+
+  // Nothing productive in one move — see if any lateral shuffle sets up a productive move next.
+  for (const c of candidates) {
+    const sim = simulateSpiderMove(st.tableau, c.fromCol, c.cardIndex, c.toCol);
+    const next = listSpiderCandidates(sim.tableau);
+    const productive = next.some((c2) => {
+      const sim2 = simulateSpiderMove(sim.tableau, c2.fromCol, c2.cardIndex, c2.toCol);
+      return sim2.completes || sim2.revealed;
+    });
+    if (productive) return asHint(c, 500);
+  }
+
   if (st.stock.length > 0 && !st.tableau.some((c) => c.length === 0)) return { type: "deal" };
   return null;
 }
 
-function findKlondikeHint() {
-  const st = klondikeState;
+/* ---- Klondike ---- */
+
+function cloneKlondikeState(st) {
+  return {
+    tableau: st.tableau.map((col) => col.map(cloneCard)),
+    waste: st.waste.map(cloneCard),
+    foundations: st.foundations.map((f) => ({ suit: f.suit, cards: f.cards.map(cloneCard) })),
+  };
+}
+
+function getPileCardsFrom(state, ref) {
+  if (ref.k === "tableau") return state.tableau[ref.i];
+  if (ref.k === "waste") return state.waste;
+  if (ref.k === "foundation") return state.foundations[ref.i].cards;
+  return null;
+}
+
+function listKlondikeCandidates(state) {
   const sources = [];
   for (let c = 0; c < KLONDIKE_COLS; c++) {
-    const col = st.tableau[c];
+    const col = state.tableau[c];
     for (let i = 0; i < col.length; i++) {
-      const group = getDraggableGroup({ k: "tableau", i: c }, i);
-      if (group) sources.push({ ref: { k: "tableau", i: c }, cardIndex: i, group });
+      if (!col[i].faceUp || isJoker(col[i])) continue; // hint never initiates a move from an on-board joker
+      const group = col.slice(i);
+      if (!isFaceUpAltDescending(group)) continue;
+      sources.push({ ref: { k: "tableau", i: c }, cardIndex: i, group });
     }
   }
-  if (st.waste.length) {
-    const i = st.waste.length - 1;
-    sources.push({ ref: { k: "waste" }, cardIndex: i, group: [st.waste[i]] });
+  if (state.waste.length) {
+    const i = state.waste.length - 1;
+    sources.push({ ref: { k: "waste" }, cardIndex: i, group: [state.waste[i]] });
   }
 
-  let best = null;
+  const out = [];
   for (const src of sources) {
     const lead = src.group[0];
-    const revealsCard = src.ref.k === "tableau" && src.cardIndex > 0 && !st.tableau[src.ref.i][src.cardIndex - 1].faceUp;
-
-    for (let f = 0; f < 4; f++) {
-      const toRef = { k: "foundation", i: f };
-      if (!canDropOnRef(lead, src.group.length, toRef)) continue;
-      let score = 5000 + (revealsCard ? 1000 : 0);
-      if (!best || score > best.score) best = { type: "move", fromRef: src.ref, cardIndex: src.cardIndex, toRef, score };
+    if (src.group.length === 1) {
+      for (let f = 0; f < 4; f++) {
+        if (klondikeCanDropOnFoundation(state.foundations[f], lead)) {
+          out.push({ fromRef: src.ref, cardIndex: src.cardIndex, group: src.group, toRef: { k: "foundation", i: f } });
+        }
+      }
     }
     for (let c = 0; c < KLONDIKE_COLS; c++) {
       if (src.ref.k === "tableau" && src.ref.i === c) continue;
-      const toRef = { k: "tableau", i: c };
-      if (!canDropOnRef(lead, src.group.length, toRef)) continue;
-      if (st.tableau[c].length === 0 && src.ref.k === "tableau" && src.cardIndex === 0) continue;
-      let score = 10 + (revealsCard ? 1000 : 0) + (src.ref.k === "waste" ? 50 : 0);
-      if (!best || score > best.score) best = { type: "move", fromRef: src.ref, cardIndex: src.cardIndex, toRef, score };
+      if (state.tableau[c].length === 0 && src.ref.k === "tableau" && src.cardIndex === 0) continue;
+      if (klondikeCanDropOnTableau(state.tableau[c], lead)) {
+        out.push({ fromRef: src.ref, cardIndex: src.cardIndex, group: src.group, toRef: { k: "tableau", i: c } });
+      }
+    }
+  }
+  return out;
+}
+
+function simulateKlondikeMove(state, fromRef, cardIndex, toRef) {
+  const s = cloneKlondikeState(state);
+  const fromArr = getPileCardsFrom(s, fromRef);
+  const group = fromArr.splice(cardIndex);
+  const toArr = getPileCardsFrom(s, toRef);
+  toArr.push(...group);
+  let revealed = false;
+  if (fromRef.k === "tableau" && fromArr.length && !fromArr[fromArr.length - 1].faceUp) {
+    fromArr[fromArr.length - 1].faceUp = true;
+    revealed = true;
+  }
+  if (toRef.k === "foundation") {
+    const f = s.foundations[toRef.i];
+    if (!f.suit) f.suit = group[0].suit;
+  }
+  return { state: s, revealed };
+}
+
+function findKlondikeHint() {
+  const st = klondikeState;
+  const state0 = { tableau: st.tableau, waste: st.waste, foundations: st.foundations };
+  const candidates = listKlondikeCandidates(state0);
+  const asHint = (c, score) => ({ type: "move", fromRef: c.fromRef, cardIndex: c.cardIndex, toRef: c.toRef, score });
+
+  let best = null;
+  for (const c of candidates) {
+    const toFoundation = c.toRef.k === "foundation";
+    const sim = simulateKlondikeMove(state0, c.fromRef, c.cardIndex, c.toRef);
+    if (!toFoundation && !sim.revealed) continue; // not productive on its own — check via lookahead below
+    let score = (toFoundation ? 5000 : 0) + (sim.revealed ? 1000 : 0) + (c.fromRef.k === "waste" ? 50 : 0);
+    if (!best || score > best.score) best = asHint(c, score);
+  }
+
+  // Drawing from the stock is deterministic (we know the next card) — flag it if it's
+  // immediately useful, so the hint doesn't miss "just draw, the next card helps".
+  if (st.stock.length > 0) {
+    const nextCard = st.stock[st.stock.length - 1];
+    for (let f = 0; f < 4; f++) {
+      if (klondikeCanDropOnFoundation(st.foundations[f], nextCard)) {
+        if (!best || 4000 > best.score) best = { type: "deal", score: 4000 };
+        break;
+      }
     }
   }
   if (best) return best;
+
+  // Nothing productive in one move — see if any lateral shuffle sets up a productive move next.
+  for (const c of candidates) {
+    const sim = simulateKlondikeMove(state0, c.fromRef, c.cardIndex, c.toRef);
+    const next = listKlondikeCandidates(sim.state);
+    const productive = next.some((c2) => {
+      if (c2.toRef.k === "foundation") return true;
+      const sim2 = simulateKlondikeMove(sim.state, c2.fromRef, c2.cardIndex, c2.toRef);
+      return sim2.revealed;
+    });
+    if (productive) return asHint(c, 500);
+  }
+
   if (st.stock.length > 0 || st.waste.length > 0) return { type: "deal" };
   return null;
 }
@@ -452,6 +587,7 @@ function getPileEl(ref) {
   if (ref.k === "tableau") return document.querySelectorAll(".column")[ref.i];
   if (ref.k === "waste") return document.getElementById("waste");
   if (ref.k === "foundation") return document.querySelectorAll(".foundation-slot")[ref.i];
+  if (ref.k === "joker") return document.getElementById("joker-tray");
   return null;
 }
 
@@ -459,7 +595,14 @@ function showHint() {
   clearHint();
   const hint = findHint();
   if (!hint) {
-    toast("Ходов не найдено. Попробуйте отменить ход.");
+    const jokersLeft = (activeState().jokers || []).length;
+    if (jokersLeft > 0) {
+      toast(`Явно полезных ходов не найдено. Попробуйте джокера (осталось: ${jokersLeft}) — им можно закрыть любую нужную карту.`);
+      document.getElementById("joker-tray").classList.add("hint-target", "hint-glow");
+      hintTimeout = setTimeout(clearHint, 3500);
+    } else {
+      toast("Полезных ходов не найдено, и джокеров тоже не осталось. Можно отменить ход.");
+    }
     return;
   }
   if (hint.type === "deal") {
@@ -483,6 +626,8 @@ function clearHint() {
   document.querySelectorAll(".column-drop-target").forEach((el) => el.classList.remove("column-drop-target"));
   const stockEl = document.getElementById("stock");
   if (stockEl) stockEl.classList.remove("hint-target", "hint-glow");
+  const jokerEl = document.getElementById("joker-tray");
+  if (jokerEl) jokerEl.classList.remove("hint-target", "hint-glow");
 }
 
 /* =============================== Persist =============================== */
@@ -501,6 +646,16 @@ function loadState(key) {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !data.tableau) return null;
+    if (!data.jokers) {
+      // Save from before jokers existed — backfill a fresh pool with ids that can't collide.
+      let maxId = 0;
+      const scan = (arr) => arr && arr.forEach((c) => { if (c.id > maxId) maxId = c.id; });
+      data.tableau.forEach(scan);
+      scan(data.stock);
+      scan(data.waste);
+      if (data.foundations) data.foundations.forEach((f) => scan(f.cards));
+      data.jokers = makeJokers(maxId + 1);
+    }
     return data;
   } catch (e) { return null; }
 }
@@ -555,6 +710,13 @@ function shakeStock() {
 
 function cardHTML(card) {
   if (!card.faceUp) return `<div class="pattern"></div>`;
+  if (isJoker(card)) {
+    return `
+      <div class="card-corner top"><span class="rank">J</span></div>
+      <div class="card-center">🃏</div>
+      <div class="card-corner bottom"><span class="rank">J</span></div>
+    `;
+  }
   const suit = SUITS[card.suit];
   const label = RANK_LABELS[card.rank];
   return `
@@ -566,7 +728,8 @@ function cardHTML(card) {
 
 function buildCardEl(card) {
   const el = document.createElement("div");
-  el.className = "card " + (card.faceUp ? "face-up " + SUITS[card.suit].color : "face-down");
+  const colorClass = isJoker(card) ? "joker" : SUITS[card.suit].color;
+  el.className = "card " + (card.faceUp ? "face-up " + colorClass : "face-down");
   el.dataset.cardId = card.id;
   el.innerHTML = cardHTML(card);
   return el;
@@ -575,6 +738,7 @@ function buildCardEl(card) {
 function render() {
   document.getElementById("app").dataset.mode = mode;
   renderStock();
+  renderJokerTray();
   if (mode === "klondike") { renderWaste(); renderFoundations(); }
   renderTableau();
   const st = activeState();
@@ -636,6 +800,26 @@ function renderStock() {
   el.appendChild(count);
 }
 
+function renderJokerTray() {
+  const el = document.getElementById("joker-tray");
+  const pool = activeState().jokers || [];
+  el.innerHTML = "";
+  if (!pool.length) { el.classList.add("empty"); return; }
+  el.classList.remove("empty");
+  const top = pool[pool.length - 1];
+  const cardEl = buildCardEl(top);
+  cardEl.style.position = "absolute";
+  cardEl.style.inset = "0";
+  el.appendChild(cardEl);
+  attachCardPointerHandlers(cardEl, { k: "joker" }, top);
+  if (pool.length > 1) {
+    const count = document.createElement("div");
+    count.className = "stock-count";
+    count.textContent = pool.length;
+    el.appendChild(count);
+  }
+}
+
 function renderWaste() {
   const el = document.getElementById("waste");
   el.innerHTML = "";
@@ -660,7 +844,11 @@ function renderFoundations() {
     const f = klondikeState.foundations[i];
     if (f.cards.length) {
       const top = f.cards[f.cards.length - 1];
-      slot.appendChild(buildCardEl(top));
+      const cardEl = buildCardEl(top);
+      cardEl.style.position = "absolute";
+      cardEl.style.inset = "0";
+      slot.appendChild(cardEl);
+      attachCardPointerHandlers(cardEl, { k: "foundation", i }, top);
     }
     el.appendChild(slot);
   }
@@ -711,7 +899,16 @@ function autoMoveCard(ref, cardIndex) {
   const group = getDraggableGroup(ref, cardIndex);
   if (!group) return false;
 
-  if (mode === "klondike" && group.length === 1) {
+  if (isJoker(group[0]) && group.length === 1) {
+    // Never blind-place a scarce joker on a tap — that requires a deliberate drag.
+    // But a placed joker taps straight back to the tray, since reclaiming it is
+    // always the most valuable thing to do with it.
+    if (ref.k === "joker") return false;
+    if (canDropOnRef(group[0], 1, { k: "joker" })) return commitMove(ref, cardIndex, { k: "joker" });
+    return false;
+  }
+
+  if (mode === "klondike" && group.length === 1 && ref.k !== "foundation") {
     for (let i = 0; i < 4; i++) {
       const toRef = { k: "foundation", i };
       if (canDropOnRef(group[0], group.length, toRef)) return commitMove(ref, cardIndex, toRef);
@@ -812,6 +1009,11 @@ function onCardPointerDown(e, pileRef, cardEl) {
 }
 
 function findDropTargetAtPoint(x, y) {
+  const jokerEl = document.getElementById("joker-tray");
+  if (jokerEl) {
+    const r = jokerEl.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return { k: "joker" };
+  }
   if (mode === "klondike") {
     const slots = document.querySelectorAll(".foundation-slot");
     for (let i = 0; i < slots.length; i++) {

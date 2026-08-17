@@ -9,7 +9,7 @@ html, body {
 }
 
 :root {
-  --card-w: min(9.2vw, 9.4vh);
+  --card-w: min(10.4vw, 10.6vh);
   --card-h: calc(var(--card-w) * 1.42);
   --overlap-down: calc(var(--card-h) * 0.16);
   --overlap-up: calc(var(--card-h) * 0.24);
@@ -117,6 +117,19 @@ html, body {
 .waste-pile.empty { border-style: dashed; }
 .waste-pile:not(.empty) { border-style: solid; border-color: rgba(255,255,255,0.12); }
 
+.joker-tray { border-color: rgba(191,143,255,0.4); }
+.joker-tray:not(.empty) { border-style: solid; }
+.joker-tray.empty::after {
+  content: "🃏";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--card-w) * 0.5);
+  opacity: 0.3;
+}
+
 #foundations {
   display: flex;
   gap: 0.6vw;
@@ -214,6 +227,11 @@ html, body {
 }
 .card.face-up.red { color: var(--red); }
 .card.face-up.black { color: var(--black); }
+.card.face-up.joker {
+  background: linear-gradient(135deg, #4a2a7a, #7a3fb8);
+  color: #f4e3ff;
+  border-color: rgba(255,255,255,0.35);
+}
 .card.movable { cursor: grab; }
 .card.not-movable.face-up { cursor: default; }
 
@@ -378,8 +396,13 @@ html, body {
 }
 .stock-pile.shake { animation: shake 0.4s; }
 
+#app[data-mode="klondike"] {
+  --card-w: min(12.6vw, 11.4vh);
+}
+
 @media (max-width: 480px) {
-  :root { --card-w: min(9.4vw, 8vh); }
+  :root { --card-w: min(10.6vw, 9vh); }
+  #app[data-mode="klondike"] { --card-w: min(13.2vw, 9.6vh); }
   .stat { display: none; }
   .stat:last-child { display: inline; }
 }
